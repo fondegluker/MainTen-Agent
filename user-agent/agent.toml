@@ -1,0 +1,35 @@
+[server]
+port = 8080
+bind = "0.0.0.0"
+
+[security]
+allowed_ips = [
+    "127.0.0.1",
+    "192.168.1.100",
+    "10.0.0.0/8"
+]
+auth_token = ""
+# Токен для эндпоинта /api/run-as. Если пусто — эндпоинт отключён.
+run_as_token = ""
+
+[crypto]
+# Путь к файлу приватного ключа. Публичный ключ будет рядом с суффиксом .pub
+private_key_path = "C:\\ProgramData\\UserAgent\\agent_key.pem"
+# Алгоритм: "ecdsa-p256" или "rsa-3072"
+algorithm = "ecdsa-p256"
+
+[storage]
+dir = "C:\\ProgramData\\UserAgent\\Storage"
+max_file_size_mb = 500
+allowed_extensions = [".exe", ".bat", ".cmd", ".msi"]
+
+[logging]
+level = "info"
+file = "C:\\ProgramData\\UserAgent\\agent.log"
+max_size_mb = 10
+max_backups = 5
+
+[gui]
+default_title = "Сообщение"
+font_family = "Segoe UI"
+font_size = 12

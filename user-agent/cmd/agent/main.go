@@ -1,0 +1,159 @@
+package main
+
+import (
+	"flag"
+	"fmt"
+	"log"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"github.com/maintent-agent/user-agent/internal/config"
+	"github.com/maintent-agent/user-agent/internal/crypto"
+	"github.com/maintent-agent/user-agent/internal/server"
+
+	"github.com/lxn/walk"
+
+	"gopkg.in/natefinch/lumberjack.v2"
+)
+
+func main() {
+	// Parse command line flags
+	configPath := flag.String("config", "agent.toml", "Path to configuration file")
+	flag.Parse()
+
+	// Load configuration
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		// Try loading from current directory
+		cfg, err = config.Load("agent.toml")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to load config: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	// Initialize file logger with rotation
+	initLogger(cfg.Logging.File, cfg.Logging.Level, cfg.Logging.MaxSizeMB, cfg.Logging.MaxBackups)
+
+	log.Println("[INFO] User Agent starting...")
+	log.Printf("[INFO] Configuration loaded: server port=%d, bind=%s", cfg.Server.Port, cfg.Server.Bind)
+
+	// Initialize key manager (load or generate key pair)
+	keyManager, err := crypto.LoadOrGenerate(cfg.Crypto.PrivateKeyPath, cfg.Crypto.Algorithm)
+	if err != nil {
+		log.Fatalf("[FATAL] Failed to initialize key manager: %v", err)
+	}
+
+	// Log key fingerprint (for audit)
+	fingerprint, err := keyManager.PublicKeyFingerprint()
+	if err != nil {
+		log.Printf("[WARN] Failed to get key fingerprint: %v", err)
+	} else {
+		log.Printf("[INFO] Public key fingerprint: %s", fingerprint)
+	}
+
+	// Check if run_as_token is configured
+	if cfg.Security.RunAsToken == "" {
+		log.Println("[WARN] run_as_token is not configured - /api/run-as endpoint is disabled")
+	}
+
+	// Create handlers with key manager
+	handlers := server.NewHandlers(
+		cfg.Storage.Dir,
+		cfg.Storage.MaxFileSizeMB,
+		cfg.Storage.AllowedExtensions,
+		cfg.GUI.DefaultTitle,
+		cfg.GUI.FontFamily,
+		cfg.GUI.FontSize,
+		keyManager,
+	)
+
+	// Create and start server
+	srv, err := server.NewServerWithConfig(
+		cfg.Server.Bind,
+		cfg.Server.Port,
+		cfg.Security.AllowedIPs,
+		cfg.Security.AuthToken,
+		cfg.Security.RunAsToken,
+		handlers,
+	)
+	if err != nil {
+		log.Fatalf("[FATAL] Failed to create server: %v", err)
+	}
+
+	if err := srv.Start(); err != nil {
+		log.Fatalf("[FATAL] Failed to start server: %v", err)
+	}
+
+	log.Printf("[INFO] User Agent started on %s:%d", cfg.Server.Bind, cfg.Server.Port)
+	log.Printf("[INFO] Storage directory: %s", cfg.Storage.Dir)
+	log.Printf("[INFO] Allowed IPs: %v", cfg.Security.AllowedIPs)
+	log.Printf("[INFO] Crypto algorithm: %s", cfg.Crypto.Algorithm)
+	log.Printf("[INFO] Run-as endpoint: %s", func() string {
+		if cfg.Security.RunAsToken != "" {
+			return "enabled"
+		}
+		return "disabled"
+	}())
+
+	// Set up signal handling
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
+	// Start the walk message loop in a separate goroutine
+	walk.ThreadRun(func() {
+		// Create a hidden window to keep the message loop running
+		mw, err := walk.NewMainWindow()
+		if err != nil {
+			log.Printf("[WARN] Failed to create main window: %v", err)
+			return
+		}
+		mw.SetVisible(false)
+		mw.Run()
+	})
+
+	// Wait for interrupt signal
+	go func() {
+		<-sigChan
+		log.Println("[INFO] Received shutdown signal")
+		if err := srv.Stop(); err != nil {
+			log.Printf("[ERROR] Error during shutdown: %v", err)
+		}
+		// Force exit after graceful shutdown
+		os.Exit(0)
+	}()
+
+	// Block forever - the walk message loop handles the rest
+	select {}
+}
+
+func initLogger(logFile, level string, maxSizeMB, maxBackups int) {
+	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+
+	if logFile != "" {
+		// Ensure log directory exists
+		logDir := logFile
+		for i := len(logFile) - 1; i >= 0; i-- {
+			if logFile[i] == '\\' || logFile[i] == '/' {
+				logDir = logFile[:i]
+				break
+			}
+		}
+		if err := os.MkdirAll(logDir, 0755); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: Failed to create log directory: %v\n", err)
+		}
+
+		// Use lumberjack for log rotation
+		log.SetOutput(&lumberjack.Logger{
+			Filename:   logFile,
+			MaxSize:    maxSizeMB,
+			MaxBackups: maxBackups,
+			MaxAge:     30,
+			Compress:   true,
+		})
+	}
+
+	// Set log level (placeholder for level filtering)
+	_ = level
+}
