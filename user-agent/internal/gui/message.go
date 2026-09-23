@@ -1,14 +1,10 @@
 package gui
 
 import (
-	"bytes"
 	"fmt"
-	"net/http"
-	"strings"
+	"log"
 
 	"github.com/lxn/walk"
-	. "github.com/lxn/walk"
-	"github.com/lxn/walk/declarative"
 )
 
 // Link represents a clickable link in the message.
@@ -23,101 +19,72 @@ type Button struct {
 	Callback string
 }
 
+// MessageDialog displays a simple message dialog with links and buttons.
+type MessageDialog struct {
+	Title   string
+	Body    string
+	Links   []Link
+	Buttons []Button
+}
+
 // ShowMessage displays a modal message window with links and buttons.
-// This runs in a separate goroutine to not block the HTTP server.
 func ShowMessage(title, body string, links []Link, buttons []Button, fontFamily string, fontSize int) {
-	// Use walk.ThreadRun for proper GUI initialization in goroutine
-	walk.ThreadRun(func() {
-		// Create a simple dialog window
-		mw, err := declarative.MainWindow{
-			Title:   title,
-			MinSize: Size{400, 200},
-			Layout:  VBox{},
-		}.Create()
-		if err != nil {
-			fmt.Printf("Error creating window: %v\n", err)
+	// Run in the GUI thread
+	walk.Synchronize(func() {
+		dlg := &walk.Dialog{
+			Title:  title,
+			Layout: walk.NewVBoxLayout(),
+		}
+
+		if _, err := walk.NewDialog(dlg); err != nil {
+			log.Printf("Error creating dialog: %v", err)
 			return
 		}
 
-		// Create container with padding
-		container, err := declarative.GroupBox{
-			Layout: VBox{Margins: Margins{Left: 10, Top: 10, Right: 10, Bottom: 10}},
-		}.Create(mw)
+		// Add body text
+		label, err := walk.NewLabel(dlg)
 		if err != nil {
-			fmt.Printf("Error creating container: %v\n", err)
-			mw.Dispose()
+			log.Printf("Error creating label: %v", err)
 			return
 		}
+		label.SetText(body)
 
-		// Message body
-		bodyLabel, err := declarative.Label{
-			Text:      body,
-			TextColor: 0x000000,
-			Font:      Font{Family: fontFamily, PointSize: fontSize},
-		}.Create(container)
-		if err != nil {
-			fmt.Printf("Error creating label: %v\n", err)
-		}
-		bodyLabel.SetParent(container)
-
-		// Links - only if we have any
+		// Add links if present
 		if len(links) > 0 {
-			var linkText strings.Builder
 			for _, link := range links {
-				linkText.WriteString(fmt.Sprintf(`<a href="%s">%s</a>`, link.URL, link.Text))
-			}
-			
-			linkLabel, err := declarative.LinkLabel{
-				Text:      linkText.String(),
-				TextColor: 0x0000FF,
-				Font:      Font{Family: fontFamily, PointSize: fontSize},
-			}.Create(container)
-			if err == nil {
-				linkLabel.SetParent(container)
+				linkLabel, err := walk.NewLinkLabel(dlg)
+				if err != nil {
+					continue
+				}
+				linkLabel.SetText(fmt.Sprintf(`<a href="%s">%s</a>`, link.URL, link.Text))
 				linkLabel.LinkActivated().Attach(func(link *walk.LinkActionEventArgs) {
 					OpenBrowser(link.URL())
 				})
 			}
 		}
 
-		// Spacer
-		spacer := new(VSpacer)
-		spacer.Create(container)
-		spacer.SetParent(container)
-
-		// Buttons in HBox
-		buttonContainer, err := declarative.HBox{Spacing: 10}.Create(container)
-		if err != nil {
-			fmt.Printf("Error creating button container: %v\n", err)
-		}
-		buttonContainer.SetParent(container)
-
 		// Add buttons
-		for _, btn := range buttons {
-			btn := btn // Capture for closure
-			button, err := declarative.Button{
-				Text: btn.Text,
-			}.Create(buttonContainer)
+		if len(buttons) > 0 {
+			buttonContainer, err := walk.NewHBoxLayout()
 			if err != nil {
-				fmt.Printf("Error creating button: %v\n", err)
-				continue
-			}
-			button.SetParent(buttonContainer)
-			
-			// Attach click handler
-			button.Clicked().Attach(func() {
-				// Send callback if present
-				if btn.Callback != "" {
-					go func() {
-						http.Post(btn.Callback, "application/json", bytes.NewBufferString("{}"))
-					}()
+				log.Printf("Error creating button container: %v", err)
+			} else {
+				dlg.SetLayout(buttonContainer)
+				for _, btn := range buttons {
+					button, err := walk.NewPushButton(dlg)
+					if err != nil {
+						continue
+					}
+					button.SetText(btn.Text)
+					button.Clicked().Attach(func() {
+						// TODO: Handle callback if needed
+						dlg.Accept()
+					})
 				}
-				mw.Close()
-			})
+			}
 		}
 
-		// Show and run
-		mw.SetVisible(true)
-		mw.Run()
+		// Show dialog
+		dlg.Run()
 	})
 }

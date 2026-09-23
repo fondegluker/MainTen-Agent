@@ -50,7 +50,7 @@ func LoadOrGenerate(path, algorithm string) (*KeyManager, error) {
 	var err error
 
 	// Try to load existing key
-	if _, err := os.Stat(path); err == nil {
+	if _, statErr := os.Stat(path); statErr == nil {
 		privKey, pubKey, err = loadKeyPair(path, algorithm)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load existing key: %w", err)
