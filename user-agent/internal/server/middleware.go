@@ -84,6 +84,19 @@ func (f *IPFilter) Allowed(remoteAddr string) bool {
 	return false
 }
 
+// Middleware returns a middleware that filters by IP.
+func (f *IPFilter) Middleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		remoteAddr := r.RemoteAddr
+		if !f.Allowed(remoteAddr) {
+			log.Printf("[DENY] IP %s attempted to access %s", remoteAddr, r.URL.Path)
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // IPFilterMiddleware returns a middleware that filters by IP.
 func IPFilterMiddleware(f *IPFilter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {

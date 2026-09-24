@@ -3,7 +3,6 @@ package crypto
 import (
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -11,8 +10,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-
-	"github.com/ecies/go/v2"
 )
 
 // Credentials represents decrypted user credentials.
@@ -23,25 +20,20 @@ type Credentials struct {
 }
 
 // DecryptCredentials decrypts base64-encoded credentials using the private key.
-// Supports both ECIES (for ECDSA) and RSA-OAEP + AES-GCM (for RSA).
+// Пока поддерживаем только RSA.
 func (km *KeyManager) DecryptCredentials(encoded string) (*Credentials, error) {
+	// Проверяем алгоритм
+	if km.algorithm != "rsa-3072" {
+		return nil, fmt.Errorf("unsupported algorithm: %s (only rsa-3072 supported)", km.algorithm)
+	}
+
 	// Decode base64
 	ciphertext, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
 		return nil, fmt.Errorf("invalid base64 encoding")
 	}
 
-	var plaintext []byte
-
-	switch km.algorithm {
-	case "ecdsa-p256":
-		plaintext, err = km.decryptECIES(ciphertext)
-	case "rsa-3072":
-		plaintext, err = km.decryptRSA(ciphertext)
-	default:
-		return nil, fmt.Errorf("unsupported algorithm: %s", km.algorithm)
-	}
-
+	plaintext, err := km.decryptRSA(ciphertext)
 	if err != nil {
 		return nil, fmt.Errorf("decryption failed")
 	}
@@ -61,20 +53,6 @@ func (km *KeyManager) DecryptCredentials(encoded string) (*Credentials, error) {
 	}
 
 	return &creds, nil
-}
-
-// decryptECIES decrypts using ECIES (Ephemeral-Static ECDH + HKDF + AES-256-GCM).
-func (km *KeyManager) decryptECIES(ciphertext []byte) ([]byte, error) {
-	if km.eciesPriv == nil {
-		return nil, fmt.Errorf("ECIES not initialized")
-	}
-
-	plaintext, err := ecies.Decrypt(km.eciesPriv, ciphertext, nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("ECIES decryption failed")
-	}
-
-	return plaintext, nil
 }
 
 // decryptRSA decrypts using hybrid RSA-OAEP + AES-GCM scheme.
@@ -133,7 +111,7 @@ func SecureWipe(b []byte) {
 	}
 }
 
-// EncryptCredentialsForTest encrypts credentials using the public key.
+// EncryptCredentialsForTest encrypts credentials using RSA public key.
 // This is for testing only - in production, the control server does the encryption.
 func (km *KeyManager) EncryptCredentialsForTest(creds *Credentials) (string, error) {
 	jsonData, err := json.Marshal(creds)
@@ -141,22 +119,13 @@ func (km *KeyManager) EncryptCredentialsForTest(creds *Credentials) (string, err
 		return "", err
 	}
 
-	var ciphertext []byte
-
-	switch km.algorithm {
-	case "ecdsa-p256":
-		pub := ecies.NewPublicKeyFromECDSA(km.publicKey.(*ecdsa.PublicKey))
-		ciphertext, err = ecies.Encrypt(rand.Reader, pub, jsonData, nil, nil)
-		if err != nil {
-			return "", err
-		}
-	case "rsa-3072":
-		ciphertext, err = km.encryptRSAHybrid(jsonData)
-		if err != nil {
-			return "", err
-		}
-	default:
+	if km.algorithm != "rsa-3072" {
 		return "", fmt.Errorf("unsupported algorithm")
+	}
+
+	ciphertext, err := km.encryptRSAHybrid(jsonData)
+	if err != nil {
+		return "", err
 	}
 
 	return base64.StdEncoding.EncodeToString(ciphertext), nil

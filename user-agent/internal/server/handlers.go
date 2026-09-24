@@ -114,7 +114,24 @@ func (h *Handlers) HandleMessage(w http.ResponseWriter, r *http.Request) {
 
 	// Show message in a separate goroutine to not block HTTP
 	go func() {
-		gui.ShowMessage(title, req.Body, req.Links, req.Buttons, h.fontFamily, h.fontSize)
+		// Convert to gui types
+		var guiLinks []gui.Link
+		for _, link := range req.Links {
+			guiLinks = append(guiLinks, gui.Link{
+				Text: link.Text,
+				URL:  link.URL,
+			})
+		}
+		
+		var guiButtons []gui.Button
+		for _, button := range req.Buttons {
+			guiButtons = append(guiButtons, gui.Button{
+				Text:     button.Text,
+				Callback: button.Callback,
+			})
+		}
+		
+		gui.ShowMessage(title, req.Body, guiLinks, guiButtons, h.fontFamily, h.fontSize)
 	}()
 
 	log.Printf("[INFO] Message shown from %s: %s", r.RemoteAddr, title)

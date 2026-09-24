@@ -1,44 +1,36 @@
 package gui
 
 import (
-	"os/exec"
-	"strings"
+	"log"
 )
 
-// ShowMessage displays a simple message box using Windows utilities.
-// This is a minimal implementation for the prototype.
+// Link represents a clickable link in the message.
+type Link struct {
+	Text string
+	URL  string
+}
+
+// Button represents a button with optional callback.
+type Button struct {
+	Text     string
+	Callback string
+}
+
+// ShowMessage displays a simple message (placeholder implementation).
+// For a production implementation, use proper Windows GUI libraries.
 func ShowMessage(title, body string, links []Link, buttons []Button, fontFamily string, fontSize int) {
-	// For now, just log the message since GUI is complex
-	// In production, you would use proper Windows GUI libraries
+	log.Printf("[GUI] Message dialog would show:")
+	log.Printf("[GUI]   Title: %s", title)
+	log.Printf("[GUI]   Body: %s", body)
 	
-	// Build message text
-	var sb strings.Builder
-	sb.WriteString("Title: ")
-	sb.WriteString(title)
-	sb.WriteString("\n")
-	sb.WriteString("Message: ")
-	sb.WriteString(body)
-	sb.WriteString("\n")
-	
-	if len(links) > 0 {
-		sb.WriteString("Links:\n")
-		for _, link := range links {
-			sb.WriteString("  ")
-			sb.WriteString(link.Text)
-			sb.WriteString(": ")
-			sb.WriteString(link.URL)
-			sb.WriteString("\n")
-		}
+	for _, link := range links {
+		log.Printf("[GUI]   Link: %s -> %s", link.Text, link.URL)
 	}
 	
-	if len(buttons) > 0 {
-		sb.WriteString("Buttons: ")
-		for i, btn := range buttons {
-			if i > 0 {
-				sb.WriteString(", ")
-			}
-			sb.WriteString(btn.Text)
+	for _, button := range buttons {
+		log.Printf("[GUI]   Button: %s", button.Text)
+		if button.Callback != "" {
+			log.Printf("[GUI]     Callback: %s", button.Callback)
 		}
-		sb.WriteString("\n")
 	}
 }

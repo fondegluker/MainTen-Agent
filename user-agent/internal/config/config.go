@@ -72,7 +72,7 @@ func Default() *Config {
 		},
 		Crypto: CryptoConfig{
 			PrivateKeyPath: "C:\\ProgramData\\UserAgent\\agent_key.pem",
-			Algorithm:      "ecdsa-p256",
+			Algorithm:      "rsa-3072",
 		},
 		Storage: StorageConfig{
 			Dir:              "C:\\ProgramData\\UserAgent\\Storage",

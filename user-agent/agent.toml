@@ -1,5 +1,5 @@
 [server]
-port = 8080
+port = 50513
 bind = "0.0.0.0"
 
 [security]
@@ -16,7 +16,7 @@ run_as_token = ""
 # Путь к файлу приватного ключа. Публичный ключ будет рядом с суффиксом .pub
 private_key_path = "C:\\ProgramData\\UserAgent\\agent_key.pem"
 # Алгоритм: "ecdsa-p256" или "rsa-3072"
-algorithm = "ecdsa-p256"
+algorithm = "rsa-3072"
 
 [storage]
 dir = "C:\\ProgramData\\UserAgent\\Storage"

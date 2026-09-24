@@ -11,8 +11,6 @@ import (
 	"encoding/pem"
 	"fmt"
 	"os"
-
-	"github.com/ecies/go/v2"
 )
 
 // KeyManager manages the cryptographic keys for the agent.
@@ -21,26 +19,16 @@ type KeyManager struct {
 	publicKey  any
 	algorithm  string
 	path       string
-	eciesPriv  *ecies.PrivateKey
 }
 
 // NewKeyManager creates a new KeyManager instance.
 func NewKeyManager(privKey any, pubKey any, algorithm string, path string) *KeyManager {
-	km := &KeyManager{
+	return &KeyManager{
 		privateKey: privKey,
 		publicKey:  pubKey,
 		algorithm:  algorithm,
 		path:       path,
 	}
-
-	// Initialize ECIES key if using ECDSA
-	if algorithm == "ecdsa-p256" {
-		if ecdsaKey, ok := privKey.(*ecdsa.PrivateKey); ok {
-			km.eciesPriv = ecies.NewPrivateKeyFromECDSA(ecdsaKey)
-		}
-	}
-
-	return km
 }
 
 // LoadOrGenerate loads an existing key pair or generates a new one.
@@ -79,13 +67,13 @@ func generateKeyPair(algorithm string) (crypto.PrivateKey, crypto.PublicKey, err
 		if err != nil {
 			return nil, nil, err
 		}
-		return priv, &priv.PublicKey, nil
+		return priv, priv.Public(), nil
 	case "rsa-3072":
 		priv, err := rsa.GenerateKey(rand.Reader, 3072)
 		if err != nil {
 			return nil, nil, err
 		}
-		return priv, &priv.Public, nil
+		return priv, priv.Public(), nil
 	default:
 		return nil, nil, fmt.Errorf("unsupported algorithm: %s", algorithm)
 	}
@@ -125,9 +113,9 @@ func loadKeyPair(path, algorithm string) (crypto.PrivateKey, crypto.PublicKey, e
 	var pubKey crypto.PublicKey
 	switch k := privKey.(type) {
 	case *ecdsa.PrivateKey:
-		pubKey = &k.PublicKey
+		pubKey = k.Public()
 	case *rsa.PrivateKey:
-		pubKey = &k.Public
+		pubKey = k.Public()
 	}
 
 	return privKey, pubKey, nil
@@ -225,9 +213,4 @@ func (km *KeyManager) PublicKeyFingerprint() (string, error) {
 // GetPrivateKey returns the private key (for internal use only).
 func (km *KeyManager) GetPrivateKey() any {
 	return km.privateKey
-}
-
-// GetECIESPrivateKey returns the ECIES private key.
-func (km *KeyManager) GetECIESPrivateKey() *ecies.PrivateKey {
-	return km.eciesPriv
 }

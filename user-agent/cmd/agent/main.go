@@ -12,8 +12,6 @@ import (
 	"github.com/maintent-agent/user-agent/internal/crypto"
 	"github.com/maintent-agent/user-agent/internal/server"
 
-	"github.com/lxn/walk"
-
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
@@ -101,31 +99,13 @@ func main() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
-	// Start the walk message loop in a separate goroutine
-	walk.ThreadRun(func() {
-		// Create a hidden window to keep the message loop running
-		mw, err := walk.NewMainWindow()
-		if err != nil {
-			log.Printf("[WARN] Failed to create main window: %v", err)
-			return
-		}
-		mw.SetVisible(false)
-		mw.Run()
-	})
-
 	// Wait for interrupt signal
-	go func() {
-		<-sigChan
-		log.Println("[INFO] Received shutdown signal")
-		if err := srv.Stop(); err != nil {
-			log.Printf("[ERROR] Error during shutdown: %v", err)
-		}
-		// Force exit after graceful shutdown
-		os.Exit(0)
-	}()
-
-	// Block forever - the walk message loop handles the rest
-	select {}
+	<-sigChan
+	log.Println("[INFO] Received shutdown signal")
+	if err := srv.Stop(); err != nil {
+		log.Printf("[ERROR] Error during shutdown: %v", err)
+	}
+	log.Println("[INFO] User Agent stopped")
 }
 
 func initLogger(logFile, level string, maxSizeMB, maxBackups int) {
