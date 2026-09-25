@@ -3,6 +3,7 @@ package config
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/BurntSushi/toml"
 )
@@ -10,6 +11,7 @@ import (
 // Config represents the application configuration.
 type Config struct {
 	Server   ServerConfig   `toml:"server"`
+	TLS      TLSConfig      `toml:"tls"`
 	Security SecurityConfig `toml:"security"`
 	Crypto   CryptoConfig   `toml:"crypto"`
 	Storage  StorageConfig  `toml:"storage"`
@@ -23,11 +25,20 @@ type ServerConfig struct {
 	Bind string `toml:"bind"`
 }
 
+// TLSConfig controls HTTPS transport. When Enabled is true the agent serves
+// HTTPS using CertFile/KeyFile (a server certificate signed by the deployment
+// CA). When disabled the agent falls back to plain HTTP (development only).
+type TLSConfig struct {
+	Enabled  bool   `toml:"enabled"`
+	CertFile string `toml:"cert_file"`
+	KeyFile  string `toml:"key_file"`
+}
+
 // SecurityConfig contains security settings.
 type SecurityConfig struct {
-	AllowedIPs  []string `toml:"allowed_ips"`
-	AuthToken   string   `toml:"auth_token"`
-	RunAsToken  string   `toml:"run_as_token"`
+	AllowedIPs []string `toml:"allowed_ips"`
+	AuthToken  string   `toml:"auth_token"`
+	RunAsToken string   `toml:"run_as_token"`
 }
 
 // CryptoConfig contains cryptographic settings.
@@ -38,8 +49,8 @@ type CryptoConfig struct {
 
 // StorageConfig contains file storage settings.
 type StorageConfig struct {
-	Dir              string   `toml:"dir"`
-	MaxFileSizeMB    int      `toml:"max_file_size_mb"`
+	Dir               string   `toml:"dir"`
+	MaxFileSizeMB     int      `toml:"max_file_size_mb"`
 	AllowedExtensions []string `toml:"allowed_extensions"`
 }
 
@@ -65,6 +76,11 @@ func Default() *Config {
 			Port: 8080,
 			Bind: "0.0.0.0",
 		},
+		TLS: TLSConfig{
+			Enabled:  true,
+			CertFile: "C:\\ProgramData\\UserAgent\\server.pem",
+			KeyFile:  "C:\\ProgramData\\UserAgent\\server.key",
+		},
 		Security: SecurityConfig{
 			AllowedIPs: []string{},
 			AuthToken:  "",
@@ -75,8 +91,8 @@ func Default() *Config {
 			Algorithm:      "rsa-3072",
 		},
 		Storage: StorageConfig{
-			Dir:              "C:\\ProgramData\\UserAgent\\Storage",
-			MaxFileSizeMB:    500,
+			Dir:               "C:\\ProgramData\\UserAgent\\Storage",
+			MaxFileSizeMB:     500,
 			AllowedExtensions: []string{".exe", ".bat", ".cmd", ".msi"},
 		},
 		Logging: LoggingConfig{
@@ -117,6 +133,19 @@ func (c *Config) Validate() error {
 
 	if c.Server.Bind == "" {
 		c.Server.Bind = "0.0.0.0"
+	}
+
+	// Validate TLS config when enabled.
+	if c.TLS.Enabled {
+		if c.TLS.CertFile == "" || c.TLS.KeyFile == "" {
+			return fmt.Errorf("tls enabled but cert_file/key_file not set")
+		}
+		if _, err := os.Stat(c.TLS.CertFile); err != nil {
+			return fmt.Errorf("tls cert_file not accessible: %w", err)
+		}
+		if _, err := os.Stat(c.TLS.KeyFile); err != nil {
+			return fmt.Errorf("tls key_file not accessible: %w", err)
+		}
 	}
 
 	if c.Storage.MaxFileSizeMB < 1 {

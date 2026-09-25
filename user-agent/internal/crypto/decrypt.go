@@ -56,23 +56,25 @@ func (km *KeyManager) DecryptCredentials(encoded string) (*Credentials, error) {
 }
 
 // decryptRSA decrypts using hybrid RSA-OAEP + AES-GCM scheme.
-// Format: [32 bytes encrypted AES key][12 bytes nonce][ciphertext with auth tag]
+// Format: [RSA-block encrypted AES key][12 bytes nonce][GCM ciphertext with auth tag]
 func (km *KeyManager) decryptRSA(ciphertext []byte) ([]byte, error) {
 	privKey, ok := km.privateKey.(*rsa.PrivateKey)
 	if !ok {
 		return nil, fmt.Errorf("invalid RSA private key")
 	}
 
-	// Minimum size: 32 (encrypted key) + 12 (nonce) + 16 (tag) + 1 (minimum plaintext)
-	minLen := 32 + 12 + 16 + 1
+	rsaBlockSize := privKey.Size()
+	const nonceSize = 12
+	const gcmTagSize = 16
+	minLen := rsaBlockSize + nonceSize + gcmTagSize + 1
 	if len(ciphertext) < minLen {
 		return nil, fmt.Errorf("ciphertext too short")
 	}
 
-	// Extract encrypted AES key (32 bytes for RSA-3072)
-	encryptedKey := ciphertext[:32]
-	nonce := ciphertext[32:44]
-	encryptedData := ciphertext[44:]
+	// Extract [encrypted AES key][nonce][GCM ciphertext].
+	encryptedKey := ciphertext[:rsaBlockSize]
+	nonce := ciphertext[rsaBlockSize : rsaBlockSize+nonceSize]
+	encryptedData := ciphertext[rsaBlockSize+nonceSize:]
 
 	// Decrypt AES key with RSA-OAEP
 	aesKey, err := rsa.DecryptOAEP(sha256.New(), rand.Reader, privKey, encryptedKey, nil)

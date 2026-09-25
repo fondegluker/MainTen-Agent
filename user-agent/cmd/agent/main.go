@@ -6,14 +6,24 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"runtime"
 	"syscall"
 
 	"github.com/maintent-agent/user-agent/internal/config"
 	"github.com/maintent-agent/user-agent/internal/crypto"
+	"github.com/maintent-agent/user-agent/internal/gui"
 	"github.com/maintent-agent/user-agent/internal/server"
 
 	"gopkg.in/natefinch/lumberjack.v2"
 )
+
+func init() {
+	// The GUI (walk) message loop must run on the main OS thread, and that same
+	// thread must perform the one-time common-controls initialization. Lock the
+	// main goroutine to its OS thread before anything else runs.
+	runtime.LockOSThread()
+}
 
 func main() {
 	// Parse command line flags
@@ -74,6 +84,9 @@ func main() {
 		cfg.Security.AllowedIPs,
 		cfg.Security.AuthToken,
 		cfg.Security.RunAsToken,
+		cfg.TLS.Enabled,
+		cfg.TLS.CertFile,
+		cfg.TLS.KeyFile,
 		handlers,
 	)
 	if err != nil {
@@ -95,16 +108,28 @@ func main() {
 		return "disabled"
 	}())
 
-	// Set up signal handling
+	// Handle shutdown signals in a background goroutine. On signal, stop the
+	// HTTP server and close the GUI so the message loop (running on the main
+	// thread below) returns.
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		log.Println("[INFO] Received shutdown signal")
+		if err := srv.Stop(); err != nil {
+			log.Printf("[ERROR] Error during shutdown: %v", err)
+		}
+		gui.Shutdown()
+	}()
 
-	// Wait for interrupt signal
-	<-sigChan
-	log.Println("[INFO] Received shutdown signal")
-	if err := srv.Stop(); err != nil {
-		log.Printf("[ERROR] Error during shutdown: %v", err)
+	// Run the GUI message loop on the main OS thread. This blocks until
+	// gui.Shutdown is called. All dialogs are created on this thread via the
+	// GUI manager. Common controls are initialized here once.
+	log.Println("[INFO] Starting GUI message loop")
+	if err := gui.Run(); err != nil {
+		log.Fatalf("[FATAL] GUI subsystem failed: %v", err)
 	}
+
 	log.Println("[INFO] User Agent stopped")
 }
 
@@ -113,13 +138,7 @@ func initLogger(logFile, level string, maxSizeMB, maxBackups int) {
 
 	if logFile != "" {
 		// Ensure log directory exists
-		logDir := logFile
-		for i := len(logFile) - 1; i >= 0; i-- {
-			if logFile[i] == '\\' || logFile[i] == '/' {
-				logDir = logFile[:i]
-				break
-			}
-		}
+		logDir := filepath.Dir(logFile)
 		if err := os.MkdirAll(logDir, 0755); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: Failed to create log directory: %v\n", err)
 		}

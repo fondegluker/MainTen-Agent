@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"crypto/subtle"
+	"crypto/tls"
 	"log"
 	"net/http"
 	"os"
@@ -14,14 +15,20 @@ import (
 	"github.com/maintent-agent/user-agent/internal/crypto"
 )
 
-// Server represents the HTTP server.
+// Server represents the HTTP(S) server.
 type Server struct {
-	httpServer  *http.Server
-	keyManager  *crypto.KeyManager
-	runAsToken  string
+	httpServer *http.Server
+	keyManager *crypto.KeyManager
+	runAsToken string
+
+	// TLS settings; when tlsEnabled is true the server serves HTTPS using
+	// certFile/keyFile.
+	tlsEnabled bool
+	certFile   string
+	keyFile    string
 }
 
-// NewServer creates and configures the HTTP server.
+// NewServer creates and configures the HTTP(S) server.
 func NewServer(bind string, port int, ipFilter *IPFilter, tokenAuth *TokenAuthMiddleware, handlers *Handlers, runAsToken string) *Server {
 	mux := http.NewServeMux()
 
@@ -33,7 +40,6 @@ func NewServer(bind string, port int, ipFilter *IPFilter, tokenAuth *TokenAuthMi
 
 	// Special handler for /api/run-as with token check
 	mux.HandleFunc("/api/run-as", func(w http.ResponseWriter, r *http.Request) {
-		// Apply RunAsTokenMiddleware inline
 		if runAsToken == "" {
 			log.Printf("[DENY] /api/run-as is disabled (no token configured) from %s", r.RemoteAddr)
 			http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
@@ -53,7 +59,6 @@ func NewServer(bind string, port int, ipFilter *IPFilter, tokenAuth *TokenAuthMi
 			return
 		}
 
-		// Token valid, proceed to handler
 		handlers.HandleRunAs(w, r)
 	})
 
@@ -68,7 +73,6 @@ func NewServer(bind string, port int, ipFilter *IPFilter, tokenAuth *TokenAuthMi
 	// Apply token auth (but not for /api/pubkey, /api/health)
 	if tokenAuth != nil {
 		handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Skip token auth for pubkey and health
 			if r.URL.Path == "/api/pubkey" || r.URL.Path == "/api/health" {
 				mux.ServeHTTP(w, r)
 				return
@@ -88,8 +92,8 @@ func NewServer(bind string, port int, ipFilter *IPFilter, tokenAuth *TokenAuthMi
 	return &Server{httpServer: httpServer}
 }
 
-// NewServerWithConfig creates a server with config.
-func NewServerWithConfig(bind string, port int, allowedIPs []string, authToken string, runAsToken string, handlers *Handlers) (*Server, error) {
+// NewServerWithConfig creates a server with config, including TLS settings.
+func NewServerWithConfig(bind string, port int, allowedIPs []string, authToken string, runAsToken string, tlsEnabled bool, certFile, keyFile string, handlers *Handlers) (*Server, error) {
 	ipFilter, err := NewIPFilter(allowedIPs)
 	if err != nil {
 		return nil, err
@@ -97,16 +101,40 @@ func NewServerWithConfig(bind string, port int, allowedIPs []string, authToken s
 
 	tokenAuth := NewTokenAuthMiddleware(authToken)
 
-	return NewServer(bind, port, ipFilter, tokenAuth, handlers, runAsToken), nil
+	s := NewServer(bind, port, ipFilter, tokenAuth, handlers, runAsToken)
+	s.tlsEnabled = tlsEnabled
+	s.certFile = certFile
+	s.keyFile = keyFile
+
+	if tlsEnabled {
+		// Modern, secure TLS baseline: TLS 1.2+ only.
+		s.httpServer.TLSConfig = &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		}
+	}
+
+	return s, nil
 }
 
-// Start starts the HTTP server in a goroutine.
+// Start starts the HTTP(S) server in a goroutine.
 func (s *Server) Start() error {
-	log.Printf("[INFO] Starting HTTP server on %s", s.httpServer.Addr)
+	scheme := "HTTP"
+	if s.tlsEnabled {
+		scheme = "HTTPS"
+	}
+	log.Printf("[INFO] Starting %s server on %s", scheme, s.httpServer.Addr)
 
 	go func() {
-		if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("[FATAL] HTTP server error: %v", err)
+		var err error
+		if s.tlsEnabled {
+			// Cert/key are passed to ListenAndServeTLS; the http.Server loads and
+			// watches them. TLSConfig.MinVersion is already set.
+			err = s.httpServer.ListenAndServeTLS(s.certFile, s.keyFile)
+		} else {
+			err = s.httpServer.ListenAndServe()
+		}
+		if err != nil && err != http.ErrServerClosed {
+			log.Fatalf("[FATAL] %s server error: %v", scheme, err)
 		}
 	}()
 
@@ -115,7 +143,7 @@ func (s *Server) Start() error {
 
 // Stop gracefully shuts down the server.
 func (s *Server) Stop() error {
-	log.Println("[INFO] Shutting down HTTP server...")
+	log.Println("[INFO] Shutting down server...")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -124,7 +152,7 @@ func (s *Server) Stop() error {
 		return err
 	}
 
-	log.Println("[INFO] HTTP server stopped")
+	log.Println("[INFO] Server stopped")
 	return nil
 }
 

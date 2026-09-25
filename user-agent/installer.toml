@@ -1,0 +1,20 @@
+# MainTen Agent Installer configuration.
+#
+# Controls installer behavior. All values are optional; sensible defaults apply
+# when the file or individual keys are absent.
+
+[firewall]
+# Whether to create the inbound firewall rule at all.
+enabled = true
+
+# Network profiles the inbound rule applies to. Any combination of:
+#   "domain"  - domain-joined networks
+#   "private" - home/work networks marked private
+#   "public"  - public networks (cafes, airports)
+# The installer maps these to the netsh "profile=" value. If the list is empty
+# or omitted, "private" is used as a safe default.
+profiles = ["domain", "private"]
+
+[install]
+# Optional override for the install directory. Empty => %LOCALAPPDATA%\MainTenAgent.
+dir = ""

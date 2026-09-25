@@ -1,0 +1,41 @@
+
+=== Agent Test Utility ===
+Generated temporary run_as_token and updated D:\PythonProjects\MainTen-Agent\user-agent\agent.toml
+Share published: \\127.0.0.1\AgentTestShare (backing dir: C:\Users\semsu\AppData\Local\Temp\agent-test-share-4272317950)
+Created temporary local user: agenttestuser
+
+== tls transport ==
+  [PASS] https with CA trust (200 over TLS)
+  [PASS] https rejects untrusted cert (validation failed as expected)
+  [PASS] plain http refused on tls port (status=400)
+
+== health & pubkey ==
+  [PASS] GET /api/health (200 OK)
+  [PASS] GET /api/pubkey (algorithm=rsa-3072)
+
+== run (current user) ==
+  [PASS] run .exe (process launched)
+  [PASS] run .bat (process launched + marker observed)
+  [PASS] run .cmd (process launched + marker observed)
+  [PASS] run .msi (process launched)
+  [PASS] run rejects non-UNC source (400 Bad Request)
+  [PASS] run rejects disallowed extension (400 Bad Request)
+
+== run-as (encrypted credentials) ==
+  [PASS] run-as without token -> 403 (403 Forbidden)
+  [PASS] run-as plaintext creds -> 400 (400 Bad Request)
+  [PASS] run-as foreign key -> 400 (400 invalid credentials payload)
+  [PASS] run-as positive launch (200 process started as agenttestuser)
+
+== message ==
+  [PASS] POST /api/message (200 message shown (check for a window))
+
+== Summary ==
+  ################
+  passed:  16
+  failed:  0
+  total:   16
+
+  ALL CHECKS PASSED
+
+Results also written to: D:\PythonProjects\MainTen-Agent\user-agent\agent-test.log
